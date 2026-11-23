@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>HiddifyGuard</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <StartupObject>HiddifyGuard.App.Program</StartupObject>
+    <Description>Persistent Windows kill switch for Hiddify TUN</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../HiddifyGuard.Core/HiddifyGuard.Core.csproj" />
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+</Project>
