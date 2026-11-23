@@ -44,6 +44,25 @@ public sealed class StorageAndDiagnosticsTests
         Assert.Equal(LeakVerdict.PossibleLeak, LeakTester.Evaluate(true, [new("v4", ProbeOutcome.Reachable, "", 0)]));
         Assert.Equal(LeakVerdict.ProtectionOff, LeakTester.Evaluate(false, [new("v4", ProbeOutcome.Reachable, "", 0)]));
     }
+    [Theory]
+    [InlineData(ProbeOutcome.Reachable, ProbeOutcome.Reachable)]
+    [InlineData(ProbeOutcome.Inconclusive, ProbeOutcome.Inconclusive)]
+    [InlineData(ProbeOutcome.Blocked, ProbeOutcome.Blocked)]
+    public void SecondInterfaceContributesToDirectProbeResult(ProbeOutcome secondOutcome, ProbeOutcome expected)
+    {
+        var result = LeakTester.SummarizeAttempts("IPv4 TCP",
+            [new("if 6", ProbeOutcome.Blocked, "socket-10013", 0), new("if 9", secondOutcome, "second-result", 1)], 1);
+
+        Assert.Equal(expected, result.Outcome);
+        Assert.Contains("if 6: socket-10013", result.Reason);
+        Assert.Contains("if 9: second-result", result.Reason);
+    }
+
+    [Fact] public void MissingPhysicalBindingsDoNotCountAsBlocked()
+    {
+        Assert.Equal(ProbeOutcome.NotApplicable, LeakTester.SummarizeAttempts("IPv6 TCP", [], 0).Outcome);
+    }
+
     [Fact] public void DnsReplyRequiresMatchingIdAndResponseFlag()
     {
         var packet = LeakTester.DnsPacket(0x1234);

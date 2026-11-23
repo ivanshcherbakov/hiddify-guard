@@ -1,0 +1,10 @@
+  HiddifyGuard.Core -> C:\Review\work\hiddify-guard\src\HiddifyGuard.Core\bin\Release\net8.0-windows\HiddifyGuard.Core.dll
+  HiddifyGuard.App -> C:\Review\work\hiddify-guard\src\HiddifyGuard.App\bin\Release\net8.0-windows\HiddifyGuard.dll
+  HiddifyGuard.Core.Tests -> C:\Review\work\hiddify-guard\src\HiddifyGuard.Core.Tests\bin\Release\net8.0-windows\HiddifyGuard.Core.Tests.dll
+
+Сборка успешно завершена.
+    Предупреждений: 0
+    Ошибок: 0
+
+Прошло времени 00:00:15.48
+build exit code: 0

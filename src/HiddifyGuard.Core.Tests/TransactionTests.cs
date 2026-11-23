@@ -40,14 +40,51 @@ public sealed class TransactionTests
     [Fact] public void MissingBootFilterAndDisabledProviderAreDegraded()
     {
         var fake = new FakeSession();
-        fake.Filters.AddRange(PolicyBuilder.Build(false, DiscoverySnapshot.Empty).Select(Stored));
+        var plan = PolicyBuilder.Build(false, DiscoverySnapshot.Empty);
+        fake.Filters.AddRange(plan.Select(Stored));
         var engine = new PolicyEngine(() => fake);
-        Assert.Equal(ProtectionState.On, engine.Inspect().State);
+        Assert.True(engine.Inspect(plan).MatchesPlan);
         fake.ProviderDisabled = true;
-        Assert.Equal(ProtectionState.Degraded, engine.Inspect().State);
+        var disabled = engine.Inspect(plan);
+        Assert.Equal(ProtectionState.Degraded, disabled.State);
+        Assert.False(disabled.MatchesPlan);
         fake.ProviderDisabled = false;
         fake.Filters.RemoveAll(f => f.Id == GuardIds.Filter("boot/v6/block"));
         Assert.Equal(ProtectionState.Degraded, engine.Inspect().State);
+    }
+
+    [Theory]
+    [InlineData(0x00000001u, false)]
+    [InlineData(0x00000002u, false)]
+    [InlineData(0x00000010u, true)]
+    [InlineData(0x00000011u, true)]
+    public void ProviderUsesSdkDisabledFlag(uint flags, bool expected) =>
+        Assert.Equal(expected, new NativeProvider { Flags = flags }.IsDisabled);
+
+    [Fact] public void DisabledOptionalFilterIsDegraded()
+    {
+        var fake = new FakeSession();
+        var plan = PolicyBuilder.Build(true, DiscoverySnapshot.Empty);
+        fake.Filters.AddRange(plan.Select(Stored));
+        var index = fake.Filters.FindIndex(filter => filter.Id == GuardIds.Filter("persistent/v4/lan/10.0.0.0/8"));
+        fake.Filters[index] = fake.Filters[index] with { Flags = 0x21 };
+
+        var status = new PolicyEngine(() => fake).Inspect(plan);
+        Assert.Equal(ProtectionState.Degraded, status.State);
+        Assert.False(status.MatchesPlan);
+    }
+
+    [Theory]
+    [InlineData(false, null)]
+    [InlineData(true, (ushort)123)]
+    public void UnconditionalPermitAndExtraBootPermitAreRejectedBeforeTransaction(bool boot, ushort? port)
+    {
+        var fake = new FakeSession();
+        var plan = PolicyBuilder.Build(false, DiscoverySnapshot.Empty)
+            .Append(new FilterRule("extra-permit", false, boot, true, 100, RemotePort: port)).ToArray();
+
+        Assert.Throws<ArgumentException>(() => new PolicyEngine(() => fake).Replace(plan));
+        Assert.Equal(0, fake.Begins);
     }
     [Fact] public void UnsafeOrIncompletePlanNeverBeginsATransaction()
     {

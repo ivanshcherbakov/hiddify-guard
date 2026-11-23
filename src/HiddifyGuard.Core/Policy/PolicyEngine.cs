@@ -31,12 +31,13 @@ public sealed class PolicyEngine(Func<IWfpSession> open)
             f.SubLayer == GuardIds.SubLayer && f.Layer == Native.WfpConstants.Layer(rule.IsV6) &&
             f.Flags == rule.Flags && f.Action == (rule.Permit ? 0x1002u : 0x1001u) &&
             f.Tag == GuardIds.Tag + rule.Fingerprint);
-        var healthy = !session.ProviderDisabled && required.All(Matches);
+        var healthy = !session.ProviderDisabled && required.All(Matches) &&
+            filters.All(f => (f.Flags & Native.WfpConstants.FilterDisabled) == 0);
         var applications = filters.Where(f => f.Name.Contains("/app/", StringComparison.Ordinal))
             .Select(f => f.Name[(f.Name.IndexOf("/app/", StringComparison.Ordinal) + 5)..])
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         return new(healthy ? ProtectionState.On : ProtectionState.Degraded, filters.Count,
-            plan is not null && filters.Count == plan.Count && plan.All(Matches),
+            healthy && plan is not null && filters.Count == plan.Count && plan.All(Matches),
             filters.Count(f => (f.Flags & 2) != 0), filters.Count(f => (f.Flags & 1) != 0), applications);
     }
 
@@ -46,9 +47,14 @@ public sealed class PolicyEngine(Func<IWfpSession> open)
             throw new ArgumentException("A persistent and boot-time policy is required.", nameof(rules));
         // Validate before touching WFP. A malformed plan must not replace a working kill switch.
         var required = PolicyBuilder.Build(false, DiscoverySnapshot.Empty).Where(r => r.Required).ToArray();
-        if (required.Any(r => !rules.Contains(r)) || rules.Select(r => r.Id).Distinct().Count() != rules.Count)
+        if (required.Any(r => !rules.Contains(r)) || rules.Select(r => r.Id).Distinct().Count() != rules.Count ||
+            rules.Any(r => r.BootTime && !required.Contains(r)))
             throw new ArgumentException("The complete IPv4/IPv6 baseline is required.", nameof(rules));
-        if (rules.Any(r => r.Permit && (r.Weight <= 1 || r.Local?.PrefixLength == 0 ||
+        if (rules.Any(r => r.Permit && (r.Weight <= 1 ||
+                (r.Local is null && r.Remote is null && r.Protocol is null &&
+                 r.LocalPort is null && r.RemotePort is null && r.Application is null &&
+                 r.NextHopInterfaceLuid is null) ||
+                r.Local?.PrefixLength == 0 ||
                 r.Remote?.PrefixLength == 0 || r.Local is not null && r.Local.IsV6 != r.IsV6 ||
                 r.Remote is not null && r.Remote.IsV6 != r.IsV6)))
             throw new ArgumentException("An unsafe allow rule was rejected.", nameof(rules));

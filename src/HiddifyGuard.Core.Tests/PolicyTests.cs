@@ -1,5 +1,7 @@
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
+using HiddifyGuard.Core.Discovery;
 using HiddifyGuard.Core.Native;
 using HiddifyGuard.Core.Policy;
 
@@ -51,15 +53,46 @@ public sealed class PolicyTests
     }
     [Fact] public void LanSwitchNeverRemovesTunOrApplicationRules()
     {
-        var discovery = new DiscoverySnapshot(@"C:\Hiddify", [@"C:\Hiddify\Hiddify.exe"], [], [], false, false);
+        var v4 = IpNetwork.Parse("172.19.0.1/32");
+        var v6 = IpNetwork.Parse("fdfe:dcba:9876::1/128");
+        var discovery = new DiscoverySnapshot(@"C:\Hiddify", [@"C:\Hiddify\Hiddify.exe"], [v4, v6], [], true, true)
+        {
+            TunBindings = [new(v4, 0x0035000000000001), new(v6, 0x0035000000000001)]
+        };
         var enabled = PolicyBuilder.Build(true, discovery);
         var disabled = PolicyBuilder.Build(false, discovery);
         Assert.DoesNotContain(disabled, r => r.Key.Contains("/lan/", StringComparison.Ordinal));
         Assert.Equal(enabled.Where(r => !r.Key.Contains("/lan/", StringComparison.Ordinal)), disabled);
         Assert.Equal(2, disabled.Count(r => r.Application is not null));
-        Assert.Contains(disabled, r => r.Local == PolicyBuilder.DefaultTunV4);
-        Assert.Contains(disabled, r => r.Local == PolicyBuilder.DefaultTunV6);
+        Assert.Contains(disabled, r => !r.BootTime && r.Local == v4 && r.NextHopInterfaceLuid == 0x0035000000000001);
+        Assert.Contains(disabled, r => !r.BootTime && r.Local == v6 && r.NextHopInterfaceLuid == 0x0035000000000001);
     }
+
+    [Fact] public void AddressAloneNeverCreatesATunPermit()
+    {
+        var address = IpNetwork.Parse("172.19.0.1/32");
+        var discovery = DiscoverySnapshot.Empty with { TunAddresses = [address], TunBindings = [new(address, 0)] };
+        Assert.DoesNotContain(PolicyBuilder.Build(false, discovery), rule => rule.Key.Contains("/tun/", StringComparison.Ordinal));
+    }
+
+    [Fact] public void TunNextHopUsesSdkGuidAndPointerToUnsigned64BitLuid()
+    {
+        const ulong luid = 0x0035000000001234;
+        using var arena = new NativeArena();
+        var condition = WfpSession.NextHopInterface(luid, arena);
+
+        Assert.Equal(new Guid("93ae8f5b-7f6f-4719-98c8-14e97429ef04"), condition.FieldKey);
+        Assert.Equal(4u, condition.Value.Type);
+        Assert.Equal(luid, unchecked((ulong)Marshal.ReadInt64(condition.Value.Pointer)));
+    }
+
+    [Theory]
+    [InlineData(NetworkInterfaceType.Ethernet, "Hiddify Ethernet", false)]
+    [InlineData(NetworkInterfaceType.Wireless80211, "Wintun Wi-Fi", false)]
+    [InlineData(NetworkInterfaceType.Tunnel, "Hiddify TUN", true)]
+    [InlineData((NetworkInterfaceType)53, "Wintun Userspace Tunnel", true)]
+    public void TunDiscoveryRequiresAnInterfaceTypeConsistentWithATunnel(NetworkInterfaceType type, string name, bool expected) =>
+        Assert.Equal(expected, HiddifyDiscovery.IsTunCandidate(type, name));
     [Fact] public void IdentitiesSurviveDiscoveryOrderAndDuplicatePaths()
     {
         var discovery = DiscoverySnapshot.Empty with { Applications = [@"C:\Hiddify\Hiddify.exe", @"C:\Hiddify\HiddifyCli.exe"] };

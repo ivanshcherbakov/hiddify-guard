@@ -62,4 +62,6 @@ internal static class WfpNative
     internal static extern uint FwpmGetAppIdFromFileName0(string fileName, out IntPtr appId);
     [DllImport(Dll, ExactSpelling = true)]
     internal static extern void FwpmFreeMemory0(ref IntPtr pointer);
+    [DllImport("iphlpapi.dll", ExactSpelling = true)]
+    internal static extern uint ConvertInterfaceGuidToLuid(in Guid interfaceGuid, out ulong interfaceLuid);
 }

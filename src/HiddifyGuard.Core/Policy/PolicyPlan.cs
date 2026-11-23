@@ -23,17 +23,22 @@ public sealed record FilterRule(
     byte? Protocol = null, ushort? LocalPort = null, ushort? RemotePort = null,
     string? Application = null, bool Required = false)
 {
+    internal ulong? NextHopInterfaceLuid { get; init; }
     public Guid Id => GuardIds.Filter(Key);
     public uint Flags => BootTime ? 2u : 1u; // Mutually exclusive, by construction.
     public string Fingerprint => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-        $"{Key}|{IsV6}|{Flags}|{Permit}|{Weight}|{Local}|{Remote}|{Protocol}|{LocalPort}|{RemotePort}|{Application?.ToUpperInvariant()}")));
+        $"{Key}|{IsV6}|{Flags}|{Permit}|{Weight}|{Local}|{Remote}|{Protocol}|{LocalPort}|{RemotePort}|{Application?.ToUpperInvariant()}" +
+        (NextHopInterfaceLuid is { } luid ? $"|{luid:X16}" : ""))));
 }
+
+internal sealed record TunBinding(IpNetwork Address, ulong InterfaceLuid);
 
 public sealed record DiscoverySnapshot(
     string? Directory, IReadOnlyList<string> Applications,
     IReadOnlyList<IpNetwork> TunAddresses, IReadOnlyList<IpNetwork> LanNetworks,
     bool TunUp, bool HiddifyRunning)
 {
+    internal IReadOnlyList<TunBinding> TunBindings { get; init; } = [];
     public static DiscoverySnapshot Empty { get; } = new(null, [], [], [], false, false);
 }
 
@@ -60,10 +65,12 @@ public static class PolicyBuilder
             }
 
             var persistent = $"persistent/{family}";
-            var tun = discovery.TunAddresses.Append(v6 ? DefaultTunV6 : DefaultTunV4)
-                .Where(n => n.IsV6 == v6).Distinct().OrderBy(n => n.ToString(), StringComparer.Ordinal);
-            foreach (var network in tun)
-                rules.Add(new($"{persistent}/tun/{network}", v6, false, true, 90, Local: network));
+            var tun = discovery.TunBindings.Where(binding => binding.Address.IsV6 == v6 && binding.InterfaceLuid != 0)
+                .Distinct().OrderBy(binding => binding.Address.ToString(), StringComparer.Ordinal)
+                .ThenBy(binding => binding.InterfaceLuid);
+            foreach (var binding in tun)
+                rules.Add(new($"{persistent}/tun/{binding.Address}/{binding.InterfaceLuid:X16}", v6, false, true, 90,
+                    Local: binding.Address) { NextHopInterfaceLuid = binding.InterfaceLuid });
 
             foreach (var app in discovery.Applications.Select(Path.GetFullPath)
                          .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase))

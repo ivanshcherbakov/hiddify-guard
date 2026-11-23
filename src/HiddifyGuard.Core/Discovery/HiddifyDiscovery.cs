@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using Microsoft.Win32;
+using HiddifyGuard.Core.Native;
 using HiddifyGuard.Core.Policy;
 using HiddifyGuard.Core.Storage;
 
@@ -10,6 +11,7 @@ namespace HiddifyGuard.Core.Discovery;
 
 public static class HiddifyDiscovery
 {
+    private const int ProprietaryVirtualInterface = 53; // IF_TYPE_PROP_VIRTUAL, used by Wintun.
     private static readonly string[] BinaryNames = ["Hiddify.exe", "HiddifyCli.exe", "sing-box.exe"];
     public static bool ValidateSavedPaths(GuardSettings settings) => settings.HiddifyDirectory is null ||
         File.Exists(Path.Combine(settings.HiddifyDirectory, "Hiddify.exe"));
@@ -36,7 +38,7 @@ public static class HiddifyDiscovery
             .FirstOrDefault(path => File.Exists(Path.Combine(path, "Hiddify.exe")));
         var apps = directory is null ? [] : BinaryNames.Select(name => Path.Combine(directory, name))
             .Where(File.Exists).Select(Path.GetFullPath).ToArray();
-        var tun = new List<IpNetwork>();
+        var tun = new List<TunBinding>();
         var lan = new List<IpNetwork>();
         var tunUp = false;
         foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces())
@@ -44,17 +46,22 @@ public static class HiddifyDiscovery
             if (adapter.OperationalStatus != OperationalStatus.Up) continue;
             var description = adapter.Name + " " + adapter.Description;
             var hiddifyNamed = description.Contains("hiddify", StringComparison.OrdinalIgnoreCase);
-            var tunNamed = hiddifyNamed || description.Contains("wintun", StringComparison.OrdinalIgnoreCase);
+            var tunCandidate = IsTunCandidate(adapter.NetworkInterfaceType, description);
+            ulong luid = 0;
+            if (tunCandidate && Guid.TryParse(adapter.Id, out var interfaceGuid) &&
+                WfpNative.ConvertInterfaceGuidToLuid(interfaceGuid, out var interfaceLuid) == 0)
+                luid = interfaceLuid;
             foreach (var address in adapter.GetIPProperties().UnicastAddresses)
             {
                 if (address.Address.AddressFamily is not (AddressFamily.InterNetwork or AddressFamily.InterNetworkV6) ||
                     System.Net.IPAddress.IsLoopback(address.Address)) continue;
                 var v6 = address.Address.AddressFamily == AddressFamily.InterNetworkV6;
-                if (tunNamed)
+                if (tunCandidate)
                 {
-                    tun.Add(new(address.Address, v6 ? 128 : 32));
-                    if (hiddifyNamed || PolicyBuilder.DefaultTunV4.Contains(address.Address) ||
-                        PolicyBuilder.DefaultTunV6.Contains(address.Address)) tunUp = true;
+                    var knownTunAddress = v6 ? PolicyBuilder.DefaultTunV6 : PolicyBuilder.DefaultTunV4;
+                    if (luid == 0 || !hiddifyNamed && !knownTunAddress.Contains(address.Address)) continue;
+                    tun.Add(new(new IpNetwork(address.Address, v6 ? 128 : 32), luid));
+                    tunUp = true;
                 }
                 else if (adapter.NetworkInterfaceType is NetworkInterfaceType.Ethernet or NetworkInterfaceType.Wireless80211)
                 {
@@ -64,8 +71,14 @@ public static class HiddifyDiscovery
                 }
             }
         }
-        return new(directory, apps, tun.Distinct().ToArray(), lan.Distinct().ToArray(), tunUp && running, running);
+        return new(directory, apps, tun.Select(binding => binding.Address).Distinct().ToArray(),
+            lan.Distinct().ToArray(), tunUp && running, running) { TunBindings = tun.Distinct().ToArray() };
     }
+
+    internal static bool IsTunCandidate(NetworkInterfaceType type, string description) =>
+        (type == NetworkInterfaceType.Tunnel || (int)type == ProprietaryVirtualInterface) &&
+        (description.Contains("hiddify", StringComparison.OrdinalIgnoreCase) ||
+         description.Contains("wintun", StringComparison.OrdinalIgnoreCase));
 
     private static IEnumerable<string> InstallDirectories()
     {

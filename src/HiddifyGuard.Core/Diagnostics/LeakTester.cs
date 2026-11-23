@@ -42,30 +42,51 @@ public sealed class LeakTester
                 var value = (await client.GetStringAsync("https://api.ipify.org", timeout.Token)).Trim();
                 if (IPAddress.TryParse(value, out var address)) ip = address.ToString();
             }
-            catch (Exception error) when (error is HttpRequestException or OperationCanceledException) { }
+            catch (HttpRequestException) { }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { }
         }
+        cancellationToken.ThrowIfCancellationRequested();
         return new(Evaluate(protectionOn, results), results, ip);
     }
     private static async Task<ProbeResult> Probe(string name, bool v6, bool dns, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var watch = Stopwatch.StartNew();
-        PhysicalBinding? binding;
-        try { binding = FindPhysical(v6); }
+        IReadOnlyList<PhysicalBinding> bindings;
+        try { bindings = FindPhysical(v6); }
         catch (NetworkInformationException) { return new(name, ProbeOutcome.Inconclusive, "interface-query-failed", watch.ElapsedMilliseconds); }
-        if (binding is null) return new(name, ProbeOutcome.NotApplicable, "no-physical-address", watch.ElapsedMilliseconds);
-        using var socket = new Socket(v6 ? AddressFamily.InterNetworkV6 : AddressFamily.InterNetwork,
-            dns ? SocketType.Dgram : SocketType.Stream, dns ? ProtocolType.Udp : ProtocolType.Tcp);
+        var attempts = await Task.WhenAll(bindings.Select(binding => ProbeBinding(binding, dns, cancellationToken)));
+        return SummarizeAttempts(name, attempts, watch.ElapsedMilliseconds);
+    }
+
+    internal static ProbeResult SummarizeAttempts(string name, IReadOnlyList<ProbeResult> attempts, long elapsedMs)
+    {
+        if (attempts.Count == 0) return new(name, ProbeOutcome.NotApplicable, "no-physical-address", elapsedMs);
+        var outcome = attempts.Any(attempt => attempt.Outcome == ProbeOutcome.Reachable)
+            ? ProbeOutcome.Reachable
+            : attempts.All(attempt => attempt.Outcome == ProbeOutcome.Blocked) ? ProbeOutcome.Blocked : ProbeOutcome.Inconclusive;
+        var reason = string.Join(", ", attempts.Select(attempt => $"{attempt.Name}: {attempt.Reason}"));
+        return new(name, outcome, reason, elapsedMs);
+    }
+
+    private static async Task<ProbeResult> ProbeBinding(PhysicalBinding binding, bool dns, CancellationToken cancellationToken)
+    {
+        var watch = Stopwatch.StartNew();
+        var name = $"if {binding.InterfaceIndex}";
+        var v6 = binding.Address.AddressFamily == AddressFamily.InterNetworkV6;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(3));
-        var prepared = false;
+        var checkingOutbound = false;
         try
         {
+            using var socket = new Socket(binding.Address.AddressFamily,
+                dns ? SocketType.Dgram : SocketType.Stream, dns ? ProtocolType.Udp : ProtocolType.Tcp);
             // Pin BOTH source and outgoing interface. An unbound probe could just use the VPN.
             socket.Bind(new IPEndPoint(binding.Address, 0));
             socket.SetSocketOption(v6 ? SocketOptionLevel.IPv6 : SocketOptionLevel.IP,
                 (SocketOptionName)31, v6 ? binding.InterfaceIndex : IPAddress.HostToNetworkOrder(binding.InterfaceIndex));
             // Windows IP_UNICAST_IF / IPV6_UNICAST_IF = 31 (ws2ipdef.h); absent from the .NET 8 enum.
-            prepared = true;
+            checkingOutbound = true;
             var target = IPAddress.Parse(dns ? "8.8.8.8" : v6 ? "2606:4700:4700::1111" : "1.1.1.1");
             await socket.ConnectAsync(new IPEndPoint(target, dns ? 53 : 443), timeout.Token);
             if (dns)
@@ -73,6 +94,7 @@ public sealed class LeakTester
                 var id = (ushort)RandomNumberGenerator.GetInt32(65536);
                 var packet = DnsPacket(id);
                 await socket.SendAsync(packet, SocketFlags.None, timeout.Token);
+                checkingOutbound = false;
                 var response = new byte[512];
                 var size = await socket.ReceiveAsync(response, SocketFlags.None, timeout.Token);
                 if (!IsDnsResponse(response.AsSpan(0, size), id))
@@ -82,7 +104,7 @@ public sealed class LeakTester
         }
         catch (SocketException error)
         {
-            return new(name, prepared && error.SocketErrorCode == SocketError.AccessDenied
+            return new(name, checkingOutbound && error.SocketErrorCode == SocketError.AccessDenied
                 ? ProbeOutcome.Blocked : ProbeOutcome.Inconclusive,
                 $"socket-{error.ErrorCode}", watch.ElapsedMilliseconds);
         }
@@ -103,8 +125,10 @@ public sealed class LeakTester
     internal static bool IsDnsResponse(ReadOnlySpan<byte> packet, ushort id) =>
         packet.Length >= 12 && BinaryPrimitives.ReadUInt16BigEndian(packet) == id && (packet[2] & 0x80) != 0;
 
-    private static PhysicalBinding? FindPhysical(bool v6)
+    private static IReadOnlyList<PhysicalBinding> FindPhysical(bool v6)
     {
+        var family = v6 ? AddressFamily.InterNetworkV6 : AddressFamily.InterNetwork;
+        var bindings = new List<PhysicalBinding>();
         foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces())
         {
             if (adapter.OperationalStatus != OperationalStatus.Up ||
@@ -112,14 +136,15 @@ public sealed class LeakTester
                 (adapter.Name + adapter.Description).Contains("wintun", StringComparison.OrdinalIgnoreCase) ||
                 (adapter.Name + adapter.Description).Contains("hiddify", StringComparison.OrdinalIgnoreCase)) continue;
             var properties = adapter.GetIPProperties();
-            if (!properties.GatewayAddresses.Any(g => g.Address.AddressFamily ==
-                    (v6 ? AddressFamily.InterNetworkV6 : AddressFamily.InterNetwork))) continue;
-            var address = properties.UnicastAddresses.FirstOrDefault(a =>
-                a.Address.AddressFamily == (v6 ? AddressFamily.InterNetworkV6 : AddressFamily.InterNetwork) &&
-                !a.Address.IsIPv6LinkLocal && !IPAddress.IsLoopback(a.Address));
-            if (address is null) continue;
-            return new(address.Address, v6 ? properties.GetIPv6Properties().Index : properties.GetIPv4Properties().Index);
+            // A more-specific route can exist without a default gateway on this adapter.
+            var addresses = properties.UnicastAddresses.Select(address => address.Address)
+                .Where(address => address.AddressFamily == family && !address.IsIPv6LinkLocal && !IPAddress.IsLoopback(address))
+                .ToArray();
+            if (addresses.Length == 0) continue;
+            var index = v6 ? properties.GetIPv6Properties().Index : properties.GetIPv4Properties().Index;
+            if (index <= 0) throw new NetworkInformationException();
+            bindings.AddRange(addresses.Select(address => new PhysicalBinding(address, index)));
         }
-        return null;
+        return bindings;
     }
 }

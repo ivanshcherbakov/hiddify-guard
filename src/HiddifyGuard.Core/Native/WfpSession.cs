@@ -26,7 +26,7 @@ public sealed class WfpSession : IWfpSession
             {
                 if (status == 0x80320005) return true;
                 WfpNative.Check(status, "FwpmProviderGetByKey0");
-                return (Marshal.PtrToStructure<NativeProvider>(pointer).Flags & 2) != 0;
+                return Marshal.PtrToStructure<NativeProvider>(pointer).IsDisabled;
             }
             finally { if (pointer != IntPtr.Zero) WfpNative.FwpmFreeMemory0(ref pointer); }
         }
@@ -108,6 +108,7 @@ public sealed class WfpSession : IWfpSession
         using var arena = new NativeArena();
         var conditions = new List<FilterCondition>();
         if (rule.Local is not null) conditions.Add(Address(WfpConstants.LocalAddress, rule.Local, arena));
+        if (rule.NextHopInterfaceLuid is { } luid) conditions.Add(NextHopInterface(luid, arena));
         if (rule.Remote is not null) conditions.Add(Address(WfpConstants.RemoteAddress, rule.Remote, arena));
         if (rule.Protocol is { } protocol)
             conditions.Add(new() { FieldKey = WfpConstants.Protocol, Value = new() { Type = 1, UInt8 = protocol } });
@@ -144,6 +145,13 @@ public sealed class WfpSession : IWfpSession
                 : arena.Structure(new V4AddressMask { Address = network.V4Address, Mask = network.V4Mask })
         }
     };
+
+    internal static FilterCondition NextHopInterface(ulong luid, NativeArena arena) => new()
+    {
+        FieldKey = WfpConstants.NextHopInterface,
+        Value = new() { Type = 4, Pointer = arena.Structure(luid) } // FWP_UINT64 is a pointer.
+    };
+
     public void DeleteFilter(Guid id) => WfpNative.DeleteCheck(WfpNative.FwpmFilterDeleteByKey0(engine, id), 0x80320003, "FwpmFilterDeleteByKey0");
     public void DeleteSubLayer() => WfpNative.DeleteCheck(WfpNative.FwpmSubLayerDeleteByKey0(engine, GuardIds.SubLayer), 0x80320007, "FwpmSubLayerDeleteByKey0");
     public void DeleteProvider() => WfpNative.DeleteCheck(WfpNative.FwpmProviderDeleteByKey0(engine, GuardIds.Provider), 0x80320005, "FwpmProviderDeleteByKey0");

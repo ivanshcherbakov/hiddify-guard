@@ -12,6 +12,8 @@ public static class WfpConstants
     public static readonly Guid LocalPort = new("0c1ba1af-5765-453f-af22-a8f791ac775b");
     public static readonly Guid RemotePort = new("c35a604d-d22b-4e1a-91b4-68f674ee674b");
     public static readonly Guid ApplicationId = new("d78e1e87-8644-4ea5-9437-d809ecefc971");
+    internal static readonly Guid NextHopInterface = new("93ae8f5b-7f6f-4719-98c8-14e97429ef04");
+    internal const uint FilterDisabled = 0x00000020;
     public static Guid Layer(bool v6) => v6 ? ConnectV6 : ConnectV4;
 }
 
@@ -83,11 +85,15 @@ internal struct NativeFilter
 [StructLayout(LayoutKind.Sequential)]
 internal struct NativeProvider
 {
+    private const uint DisabledFlag = 0x00000010; // FWPM_PROVIDER_FLAG_DISABLED
+
     public Guid Key;
     public DisplayData Display;
     public uint Flags;
     public ByteBlob ProviderData;
     public IntPtr ServiceName;
+
+    public readonly bool IsDisabled => (Flags & DisabledFlag) != 0;
 }
 [StructLayout(LayoutKind.Sequential)]
 internal struct NativeSubLayer
