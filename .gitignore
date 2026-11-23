@@ -6,3 +6,13 @@ dist/
 *.user
 *.suo
 *.log
+
+# Local virtual-machine media, state and disks
+.vm-lab/
+*.iso
+*.vhd
+*.vhdx
+*.avhdx
+*.vmcx
+*.vmrs
+*.vmgs

@@ -128,6 +128,9 @@ Hiddify.exe/HiddifyCli.exe/sing-box.exe только из выбранной у�
 [приёмка](docs/ACCEPTANCE.md).
 Готовое задание для независимой проверки WFP в Windows VM:
 [WFP-VM-REVIEW.txt](docs/prompts/WFP-VM-REVIEW.txt).
+Текущее задание коллеге без VM:
+[CODE-REVIEW-NO-VM.txt](docs/prompts/CODE-REVIEW-NO-VM.txt).
+Подготовка локальной VM: [VM-SETUP.md](docs/VM-SETUP.md).
 
 ## English
 

@@ -9,11 +9,22 @@
 Основной источник:
 [ivanshcherbakov/hiddify-guard](https://github.com/ivanshcherbakov/hiddify-guard).
 Коллеге достаточно ссылки на репозиторий и задания открыть
-docs/prompts/WFP-VM-REVIEW.txt и выполнить его инструкции.
+docs/prompts/CODE-REVIEW-NO-VM.txt и выполнить его инструкции.
 После клонирования зафиксируйте SHA и создайте отдельную локальную ветку.
 Изменения возвращаются патчем или, по поручению владельца, pull request.
 
-## Готовое задание на проверку WFP в VM
+## Текущее задание коллеге: без VM
+
+Полный промпт:
+[CODE-REVIEW-NO-VM.txt](prompts/CODE-REVIEW-NO-VM.txt).
+Это ревью исходников и unit-тесты с fake backend, без elevation, включения
+фильтров и изменения сети. Для Windows-тестов подходит обычный ПК или CI.
+Границы правок указаны в [карточке](tasks/CODE-REVIEW-NO-VM.md).
+
+Подготовка гостевой Windows остаётся за локальным оператором:
+[VM-SETUP.md](VM-SETUP.md).
+
+## Отдельное задание на проверку WFP в готовой VM
 
 Полный промпт для Codex сохранён в
 [prompts/WFP-VM-REVIEW.txt](prompts/WFP-VM-REVIEW.txt).
