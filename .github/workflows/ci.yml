@@ -18,6 +18,9 @@ jobs:
       - run: dotnet test src/HiddifyGuard.sln -c Release --no-build --logger trx
       - name: Read-only smoke test
         run: dotnet src/HiddifyGuard.App/bin/Release/net8.0-windows/HiddifyGuard.dll --self-test
+      - name: Temporary rule plan and failure injection (no policy changes)
+        shell: pwsh
+        run: ./scripts/temporary/Test-Plan.ps1
       - uses: actions/upload-artifact@v4
         if: always()
         with:

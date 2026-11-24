@@ -7,6 +7,10 @@
 подтверждают отсутствие утечек при загрузке, сбое VPN или работе другого
 файрвола. До стабильного выпуска требуется [приёмка](docs/ACCEPTANCE.md).
 
+Обнаружен вариант установки с HiddifyCoreEngine.exe и sing-tun/tun0,
+который основной детектор пока не учитывает. До исправления не включайте
+основное приложение с этим вариантом: [наблюдение](docs/KNOWN-ISSUES.md).
+
 ## Использование
 
 1. После публикации скачайте установщик из
@@ -131,6 +135,8 @@ Hiddify.exe/HiddifyCli.exe/sing-box.exe только из выбранной у�
 Текущее задание коллеге без VM:
 [CODE-REVIEW-NO-VM.txt](docs/prompts/CODE-REVIEW-NO-VM.txt).
 Подготовка локальной VM: [VM-SETUP.md](docs/VM-SETUP.md).
+Временный ручной режим Windows Firewall: [TEMPORARY-FIREWALL.md](docs/TEMPORARY-FIREWALL.md).
+Подтверждённые проблемы совместимости: [KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md).
 
 ## English
 

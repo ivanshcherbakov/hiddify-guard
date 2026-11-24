@@ -3,8 +3,9 @@
 Текущее задание коллеге. Полный промпт:
 [CODE-REVIEW-NO-VM.txt](../prompts/CODE-REVIEW-NO-VM.txt).
 
-Границы: Core/Native, Policy, Storage, Diagnostics, GuardController и Core.Tests.
-Изменения GUI, installer и scripts/vm принадлежат другому исполнителю.
+Границы: Core/Native, Policy, Storage, Diagnostics, Discovery, GuardController и Core.Tests.
+Изменения GUI, installer, scripts/vm и scripts/temporary принадлежат другому исполнителю.
+Приоритетное наблюдение: [KNOWN-ISSUES.md](../KNOWN-ISSUES.md).
 
 Проверить ABI, управление памятью, отказы транзакций, ownership,
 конфигурацию/ACL/логи и чистые диагностические вердикты.

@@ -5,6 +5,9 @@
 Склонируй актуальную main, зафиксируй SHA и работай в отдельной локальной ветке.
 Прочитай AGENTS.md, docs/REQUIREMENTS.md, docs/HANDOFF.md, docs/VALIDATION.md
 и docs/tasks/CODE-REVIEW-NO-VM.md. Задание WFP-VM-REVIEW.txt сейчас не выполняй.
+Также прочитай docs/KNOWN-ISSUES.md: подтверждён вариант HiddifyCoreEngine.exe
+и sing-tun/tun0, который текущий детектор не учитывает. Разбери этот дефект
+в Discovery и покрой независимыми тестами, не запуская реальный VPN или WFP.
 
 ЦЕЛЬ
 
@@ -32,10 +35,11 @@ src/HiddifyGuard.Core/Native/
 src/HiddifyGuard.Core/Policy/
 src/HiddifyGuard.Core/Storage/
 src/HiddifyGuard.Core/Diagnostics/
+src/HiddifyGuard.Core/Discovery/
 src/HiddifyGuard.Core/GuardController.cs
 src/HiddifyGuard.Core.Tests/
 
-VM-скрипты, установщик, GUI и задания других исполнителей не переписывай.
+VM-скрипты, scripts/temporary, установщик, GUI и задания других исполнителей не переписывай.
 Если дефект выходит за границы, опиши его отдельно.
 
 ПРОВЕРКИ
